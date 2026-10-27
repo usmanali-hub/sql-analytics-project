@@ -1,0 +1,17 @@
+[project]
+name = "sql-analytics-project"
+version = "0.1.0"
+description = "SQL analytics on the Chinook music-store database: schema docs, business questions and tests"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "mypy>=1.8", "ruff>=0.5"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+files = ["src"]
