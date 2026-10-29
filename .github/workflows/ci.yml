@@ -20,3 +20,6 @@ jobs:
       - run: mypy
       - run: PYTHONPATH=src pytest -q
       - run: PYTHONPATH=src python -m sqlproject check
+      - run: PYTHONPATH=src python -m sqlproject report
+      - name: Results and docs are committed and current
+        run: git diff --exit-code

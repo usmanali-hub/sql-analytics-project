@@ -38,12 +38,52 @@ Things worth knowing before writing queries:
 - `Track.Composer` is NULL for 977 of 3,503 tracks.
 - `Employee.ReportsTo` has exactly one NULL: the top of the reporting tree.
 
+## Business questions
+
+Ten questions answered with joins and aggregations, one `.sql` file each in [`queries/`](queries/),
+with results in [`results/`](results/) and a readable write-up in
+[`docs/business_questions.md`](docs/business_questions.md):
+
+| # | Question | SQL techniques |
+|---|---|---|
+| 1 | Which countries generate the most revenue? | GROUP BY, SUM, AVG |
+| 2 | Who are the top 10 customers? | INNER JOIN, GROUP BY |
+| 3 | Which genres earn the most? | 3-table join, LEFT JOIN, COALESCE |
+| 4 | Which artists bring in the most revenue? | 4-table join chain |
+| 5 | How does revenue move month by month? | strftime date bucketing |
+| 6 | How much revenue does each support rep's customer base generate? | LEFT JOINs that keep reps with no customers |
+| 7 | How many tracks have never been bought, by genre? | Anti-join (LEFT JOIN ... IS NULL) |
+| 8 | How many customers placed 1, 2, 3... invoices? | Aggregate of an aggregate |
+| 9 | How big is each playlist? | Link-table join, unit conversion |
+| 10 | Who reports to whom? | Self-join |
+
+Some of what the results show (all from `results/`):
+
+- The USA is the top market with 91 of 412 invoices and $523.06 of $2,328.60 in revenue (22.5%); Canada is second at $303.96.
+- Rock is the top genre at $826.65, about 35.5% of revenue; Iron Maiden is the top artist at $138.60.
+- 1,519 of 3,503 tracks (43%) have never been bought.
+- Purchasing is almost uniform: 58 of 59 customers placed exactly 7 invoices and one placed 6. That points to generated sample data, so patterns like "repeat buyers" cannot be drawn from it.
+- Two playlists are both named "Music" (ids 1 and 8) with identical sizes, a duplicate worth cleaning in a real system.
+
+### How the results are checked
+
+SQL that runs is not necessarily SQL that is right. `tests/test_queries.py` recomputes every answer
+in plain Python (dictionaries and loops over the raw tables) and compares. It also reconciles
+totals: revenue from `Invoice.Total` equals revenue rebuilt from `InvoiceLine` ($2,328.60), and the
+join-heavy questions (genres, artists, reps, months) each sum back to that same total, which proves
+the joins lose no rows. Another test fails if the committed `results/` or `docs/` are out of date.
+
+```bash
+PYTHONPATH=src python -m sqlproject report   # rerun all queries, rewrite results/ and docs/business_questions.md
+```
+
 ## Code
 
 | Module | Purpose |
 |---|---|
 | `sqlproject.db` | Read-only connection, introspection of tables, columns and foreign keys, row and NULL counts, integrity check |
 | `sqlproject.diagram` | Mermaid ER diagram and data-profile Markdown generated from that introspection |
+| `sqlproject.runner` | Loads `queries/*.sql`, runs them read-only, writes CSV results and the Markdown report |
 
 Design notes:
 
@@ -53,5 +93,4 @@ Design notes:
 
 ## Next
 
-Joins and aggregations answering business questions (revenue by country, best customers, top artists),
-then CTEs and window functions, with each query in its own `.sql` file and its result recorded.
+CTEs and window functions for ranking and running totals, a query-plan comparison with and without an index, and parameterized queries from Python.
