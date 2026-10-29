@@ -121,10 +121,10 @@ LIMIT 10;
 
 ## 5. How does revenue move month by month?
 
-strftime turns the invoice timestamp into a year-month bucket. Months without invoices do not appear (there is no calendar table), so gaps must be read as zero.
+The first seven characters of the timestamp text ("2021-01") form a year-month bucket; SUBSTR over a CAST is used instead of strftime because it behaves the same in SQLite, DuckDB and PostgreSQL. Months without invoices do not appear (there is no calendar table), so gaps must be read as zero.
 
 ```sql
-SELECT strftime('%Y-%m', InvoiceDate) AS month,
+SELECT SUBSTR(CAST(InvoiceDate AS VARCHAR), 1, 7) AS month,
        COUNT(*)                       AS invoices,
        ROUND(SUM(Total), 2)           AS revenue
 FROM Invoice
@@ -318,41 +318,35 @@ ORDER BY quartile;
 | 3 | 15 | 564.3 | 24.2 |
 | 4 | 14 | 525.7 | 22.6 |
 
-## 12. What is cumulative revenue by month, and how does each month compare with the one before?
+## 12. How does revenue change year over year, and what is the running total?
 
-Builds on the monthly buckets from question 5. SUM() OVER an ordered frame gives the running total; LAG() fetches the previous month in the same row so the change needs no self-join. The first month has no predecessor, so its change is NULL rather than a made-up zero. Gaps in the calendar are not filled, so LAG compares with the previous month that has invoices.
+Yearly rather than monthly buckets on purpose: monthly revenue in this database is almost flat, so a month-on-month change would be a column of zeros. SUM() OVER an ordered frame gives the running total; LAG() fetches the previous year in the same row so the percentage change needs no self-join. The first year has no predecessor, so its change is NULL rather than an invented zero. The year is the first four characters of the timestamp text, which works the same in SQLite, DuckDB and PostgreSQL.
 
 ```sql
-WITH monthly AS (
-    SELECT strftime('%Y-%m', InvoiceDate) AS month,
-           SUM(Total)                     AS revenue
+WITH yearly AS (
+    SELECT SUBSTR(CAST(InvoiceDate AS VARCHAR), 1, 4) AS year,
+           COUNT(*)                                    AS invoices,
+           SUM(Total)                                  AS revenue
     FROM Invoice
-    GROUP BY strftime('%Y-%m', InvoiceDate)
+    GROUP BY SUBSTR(CAST(InvoiceDate AS VARCHAR), 1, 4)
 )
-SELECT month,
-       ROUND(revenue, 2)                                        AS revenue,
-       ROUND(SUM(revenue) OVER (ORDER BY month), 2)             AS cumulative_revenue,
-       ROUND(revenue - LAG(revenue) OVER (ORDER BY month), 2)   AS change_vs_previous
-FROM monthly
-ORDER BY month;
+SELECT year,
+       invoices,
+       ROUND(revenue, 2)                                                          AS revenue,
+       ROUND(SUM(revenue) OVER (ORDER BY year), 2)                                AS cumulative_revenue,
+       ROUND(100.0 * (revenue - LAG(revenue) OVER (ORDER BY year))
+             / LAG(revenue) OVER (ORDER BY year), 1)                              AS pct_change_vs_previous_year
+FROM yearly
+ORDER BY year;
 ```
 
-| month | revenue | cumulative_revenue | change_vs_previous |
-|---|---|---|---|
-| 2021-01 | 35.64 | 35.64 |  |
-| 2021-02 | 37.62 | 73.26 | 1.98 |
-| 2021-03 | 37.62 | 110.88 | 0.0 |
-| 2021-04 | 37.62 | 148.5 | 0.0 |
-| 2021-05 | 37.62 | 186.12 | 0.0 |
-| 2021-06 | 37.62 | 223.74 | 0.0 |
-| 2021-07 | 37.62 | 261.36 | 0.0 |
-| 2021-08 | 37.62 | 298.98 | 0.0 |
-| 2021-09 | 37.62 | 336.6 | 0.0 |
-| 2021-10 | 37.62 | 374.22 | 0.0 |
-| 2021-11 | 37.62 | 411.84 | 0.0 |
-| 2021-12 | 37.62 | 449.46 | 0.0 |
-
-_60 rows in total; first 12 shown. Full result in `results/`._
+| year | invoices | revenue | cumulative_revenue | pct_change_vs_previous_year |
+|---|---|---|---|---|
+| 2021 | 83 | 449.46 | 449.46 |  |
+| 2022 | 83 | 481.45 | 930.91 | 7.1 |
+| 2023 | 83 | 469.58 | 1400.49 | -2.5 |
+| 2024 | 83 | 477.53 | 1878.02 | 1.7 |
+| 2025 | 80 | 450.58 | 2328.6 | -5.6 |
 
 ## 13. Who are the top 2 artists in each of the five biggest genres?
 

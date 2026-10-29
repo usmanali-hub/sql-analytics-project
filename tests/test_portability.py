@@ -1,7 +1,10 @@
-"""The queries use standard SQL, so a second engine (DuckDB) must return identical rows.
+"""The queries use standard SQL, so DuckDB and PostgreSQL must return the same rows as SQLite.
 
-SQLite quietly accepts a SELECT column that is not in GROUP BY; stricter engines reject it. Running
-the same files on DuckDB catches that class of mistake and proves the results are not an SQLite quirk.
+SQLite quietly accepts a SELECT column that is not in GROUP BY and is relaxed about types; stricter
+engines are not. Running the same files elsewhere caught three real problems: non-grouped columns,
+``strftime`` (SQLite/DuckDB only) and ``ROUND(x, 2)`` on a floating-point column, which PostgreSQL
+rejects. Money columns are therefore created as NUMERIC there, as a real migration would.
+Both extra engines are optional locally (the tests skip) and installed in CI.
 """
 
 import sqlite3
@@ -49,3 +52,48 @@ def test_query_returns_same_rows_on_duckdb(engines, query):
     lite, duck = engines
     assert isinstance(lite, sqlite3.Connection)
     assert _norm(duck.execute(query.sql).fetchall()) == _norm(tuple(r) for r in lite.execute(query.sql).fetchall())
+
+
+@pytest.fixture(scope="module")
+def postgres(engines):
+    pgserver = pytest.importorskip("pixeltable_pgserver")
+    psycopg2 = pytest.importorskip("psycopg2")
+    import tempfile
+
+    server = pgserver.get_server(tempfile.mkdtemp())
+    conn = psycopg2.connect(server.get_uri())
+    conn.autocommit = True
+    cur = conn.cursor()
+    lite, _ = engines
+    tables = [r[0] for r in lite.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+    for t in tables:
+        cols = lite.execute(f'PRAGMA table_info("{t}")').fetchall()
+        # unquoted lower-case names: PostgreSQL folds the CamelCase identifiers used in the queries
+        cur.execute(f"CREATE TABLE {t} ({', '.join(f'{c[1]} {_pg_type(c[2])}' for c in cols)})")
+        rows = [tuple(r) for r in lite.execute(f'SELECT * FROM "{t}"')]
+        if rows:
+            cur.executemany(f"INSERT INTO {t} VALUES ({', '.join(['%s'] * len(cols))})", rows)
+    yield cur
+    conn.close()
+    server.cleanup()
+
+
+def _pg_type(declared: str) -> str:
+    d = declared.upper()
+    if "DATE" in d:
+        return "TIMESTAMP"
+    if d.startswith(("NUM", "DEC")):
+        return "NUMERIC"
+    if d.startswith(("REAL", "FLOAT")):
+        return "DOUBLE PRECISION"
+    if "CHAR" in d or "TEXT" in d or d == "":
+        return "TEXT"
+    return "BIGINT"
+
+
+@pytest.mark.parametrize("query", load_queries(), ids=lambda q: f"{q.number:02d}")
+def test_query_returns_same_rows_on_postgresql(engines, postgres, query):
+    lite, _ = engines
+    postgres.execute(query.sql.rstrip().rstrip(";"))
+    got = _norm(tuple(float(x) if type(x).__name__ == "Decimal" else x for x in r) for r in postgres.fetchall())
+    assert got == _norm(tuple(r) for r in lite.execute(query.sql).fetchall())

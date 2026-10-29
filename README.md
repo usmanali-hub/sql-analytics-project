@@ -40,9 +40,24 @@ Things worth knowing before writing queries:
 
 ## Business questions
 
-Fifteen questions, ten with joins and aggregations and five with CTEs and window functions, one `.sql` file each in [`queries/`](queries/),
-with results in [`results/`](results/) and a readable write-up in
-[`docs/business_questions.md`](docs/business_questions.md):
+Fifteen questions, one `.sql` file each in [`queries/`](queries/), with results in
+[`results/`](results/) and a readable write-up in [`docs/business_questions.md`](docs/business_questions.md).
+
+### What the data says
+
+- **Revenue is concentrated by genre.** Six of 24 genres reach 80% of revenue and Rock alone is 35.5% ($826.65 of $2,328.60). Iron Maiden is the top artist at $138.60. (queries 3, 4, 15)
+- **The USA is the top market**: 91 of 412 invoices and $523.06 (22.5%); Canada is second at $303.96. (1)
+- **43% of the catalogue never sold**: 1,519 of 3,503 tracks. (7)
+- **Yearly revenue is steady, not growing**: between $449 and $481 each year, with 2025 down 5.6% on 80 invoices instead of 83. (12)
+- **Ties are real and matter.** Three UK customers tie for top spender at $37.62; `RANK()` returns all three where `ROW_NUMBER()` would have dropped two arbitrarily. (14)
+- **Data quality notes**: two playlists are both named "Music" (ids 1 and 8) with identical sizes, a duplicate worth cleaning in a real system. (9)
+
+Limits of the data: it is generated sample data. 58 of 59 customers placed exactly 7 invoices, monthly
+revenue is almost flat (about $37.62 for most of the 60 months), and customer spend is only mildly
+concentrated (top quartile 28.1% of revenue, bottom quartile 22.6%). Questions about repeat buyers,
+seasonality or customer segments therefore show the technique, not a business insight.
+
+### The queries
 
 | # | Question | SQL techniques |
 |---|---|---|
@@ -50,29 +65,17 @@ with results in [`results/`](results/) and a readable write-up in
 | 2 | Who are the top 10 customers? | INNER JOIN, GROUP BY |
 | 3 | Which genres earn the most? | 3-table join, LEFT JOIN, COALESCE |
 | 4 | Which artists bring in the most revenue? | 4-table join chain |
-| 5 | How does revenue move month by month? | strftime date bucketing |
+| 5 | How does revenue move month by month? | Date bucketing with SUBSTR over CAST |
 | 6 | How much revenue does each support rep's customer base generate? | LEFT JOINs that keep reps with no customers |
 | 7 | How many tracks have never been bought, by genre? | Anti-join (LEFT JOIN ... IS NULL) |
 | 8 | How many customers placed 1, 2, 3... invoices? | Aggregate of an aggregate |
 | 9 | How big is each playlist? | Link-table join, unit conversion |
 | 10 | Who reports to whom? | Self-join |
 | 11 | How concentrated is revenue across customer spend quartiles? | CTE, NTILE |
-| 12 | What is cumulative revenue by month, and the change on the month before? | Running SUM() OVER, LAG |
+| 12 | How does revenue change year over year, with a running total? | Running SUM() OVER, LAG |
 | 13 | Who are the top 2 artists in each of the five biggest genres? | Chained CTEs, ROW_NUMBER with PARTITION BY |
 | 14 | Who is the top spender in each country with several customers? | RANK (keeps ties), COUNT() OVER |
 | 15 | How many genres does it take to reach 80% of revenue? | Cumulative share, explicit ROWS frame |
-
-Some of what the results show (all from `results/`):
-
-- The USA is the top market with 91 of 412 invoices and $523.06 of $2,328.60 in revenue (22.5%); Canada is second at $303.96.
-- Rock is the top genre at $826.65, about 35.5% of revenue; Iron Maiden is the top artist at $138.60.
-- 1,519 of 3,503 tracks (43%) have never been bought.
-- Purchasing is almost uniform: 58 of 59 customers placed exactly 7 invoices and one placed 6. That points to generated sample data, so patterns like "repeat buyers" cannot be drawn from it.
-- Two playlists are both named "Music" (ids 1 and 8) with identical sizes, a duplicate worth cleaning in a real system.
-- Customer spend is only mildly concentrated: the top quartile of customers brings in 28.1% of revenue and the bottom quartile 22.6%. Again, sample data.
-- Revenue is almost flat month to month (about $37.62 for most of the 60 months), so the growth query shows steady totals, not a trend.
-- Revenue is concentrated by genre, though: six of 24 genres reach 80% of revenue, and Rock alone is 35.5%.
-- Three UK customers tie for top spender at $37.62; `RANK()` returns all three, where `ROW_NUMBER()` would have dropped two arbitrarily.
 
 ### How the results are checked
 
@@ -88,9 +91,15 @@ PYTHONPATH=src python -m sqlproject report   # rerun all queries, rewrite result
 
 ## Portability
 
-The queries stick to standard SQL apart from `strftime` in query 5. `tests/test_portability.py` loads the same tables into DuckDB and requires every query to return the same rows as SQLite. That check found a real problem: four queries selected columns that were not in `GROUP BY`, which SQLite tolerates but stricter engines (PostgreSQL, DuckDB) reject. They now group by every selected column, with identical results.
+All 15 queries are checked on three engines: SQLite, DuckDB and PostgreSQL 16 (run in CI through
+`pixeltable-pgserver`, a bundled PostgreSQL). `tests/test_portability.py` loads the same tables into
+each and requires identical rows. Running them elsewhere found three real problems, all fixed:
 
-Not covered: query 5's month bucketing uses `strftime`, which DuckDB happens to share; PostgreSQL and MySQL would need `to_char` and `DATE_FORMAT`. Neither was run here.
+- Four queries selected columns that were not in `GROUP BY`. SQLite tolerates that; the others reject it.
+- `strftime` exists only in SQLite and DuckDB. Months and years are now `SUBSTR(CAST(InvoiceDate AS VARCHAR), 1, 7)`.
+- PostgreSQL rejects `ROUND(x, 2)` on a floating-point column, so money columns are `NUMERIC` there, as in a real migration (Chinook declares them that way).
+
+Not covered: MySQL and SQL Server. `CAST(... AS VARCHAR)` is not valid MySQL, so query 5 and 12 would need `CHAR`. Neither engine was run.
 
 ## Code
 

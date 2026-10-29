@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "mypy>=1.8", "ruff>=0.5", "duckdb>=1.0"]
+dev = ["pytest>=8", "mypy>=1.8", "ruff>=0.5", "duckdb>=1.0", "pixeltable-pgserver>=0.7", "psycopg2-binary>=2.9"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

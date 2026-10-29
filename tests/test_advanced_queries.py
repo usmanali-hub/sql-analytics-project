@@ -59,21 +59,23 @@ def test_q11_quartiles_cover_every_customer_and_all_revenue(conn, queries):
     assert [r[2] for r in got] == sorted((r[2] for r in got), reverse=True)  # quartile 1 spends most
 
 
-def test_q12_running_total_and_change_match_python(conn, queries):
-    monthly: dict[str, int] = defaultdict(int)
+def test_q12_yearly_running_total_and_change_match_python(conn, queries):
+    revenue: dict[str, int] = defaultdict(int)
+    invoices: dict[str, int] = defaultdict(int)
     for date, total in conn.execute("SELECT InvoiceDate, Total FROM Invoice"):
-        monthly[str(date)[:7]] += cents(total)
+        revenue[str(date)[:4]] += cents(total)
+        invoices[str(date)[:4]] += 1
     expected, running, previous = [], 0, None
-    for month in sorted(monthly):
-        running += monthly[month]
-        change = None if previous is None else (monthly[month] - previous) / 100
-        expected.append((month, monthly[month] / 100, running / 100, change))
-        previous = monthly[month]
+    for year in sorted(revenue):
+        running += revenue[year]
+        change = None if previous is None else round(100 * (revenue[year] - previous) / previous, 1)
+        expected.append((year, invoices[year], revenue[year] / 100, running / 100, change))
+        previous = revenue[year]
     got = rows(conn, queries, 12)
-    assert [(r[0], r[1], r[2]) for r in got] == [(e[0], e[1], e[2]) for e in expected]
-    assert [r[3] for r in got] == pytest.approx([e[3] for e in expected]) or [r[3] for r in got] == [e[3] for e in expected]
-    assert got[0][3] is None  # first month has no predecessor
-    assert got[-1][2] == pytest.approx(2328.60)  # running total ends at total revenue
+    assert got == expected
+    assert got[0][4] is None  # first year has no predecessor
+    assert got[-1][3] == pytest.approx(2328.60)  # running total ends at total revenue
+    assert sum(r[1] for r in got) == 412
 
 
 def test_q13_top_two_artists_in_top_five_genres_match_python(conn, queries):
