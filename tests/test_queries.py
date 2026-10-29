@@ -37,8 +37,8 @@ def all_rows(conn, sql):
     return conn.execute(sql).fetchall()
 
 
-def test_ten_numbered_queries_each_with_a_question(queries):
-    assert sorted(queries) == list(range(1, 11))
+def test_fifteen_numbered_queries_each_with_a_question(queries):
+    assert sorted(queries) == list(range(1, 16))
     assert all(q.question.endswith("?") and q.sql.upper().startswith(("SELECT", "WITH")) for q in queries.values())
 
 

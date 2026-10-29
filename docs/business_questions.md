@@ -286,3 +286,195 @@ ORDER BY e.EmployeeId;
 | 6 | Michael Mitchell | Andrew Adams | 2 |
 | 7 | Robert King | Michael Mitchell | 0 |
 | 8 | Laura Callahan | Michael Mitchell | 0 |
+
+## 11. How concentrated is revenue across customers, split into spend quartiles?
+
+A CTE totals spend per customer, NTILE(4) ranks customers into quartiles (1 = biggest spenders), and the outer query sums each quartile. 59 customers do not divide evenly by 4, so the first quartiles hold 15 customers and the last two hold 14.
+
+```sql
+WITH customer_spend AS (
+    SELECT CustomerId, SUM(Total) AS spend
+    FROM Invoice
+    GROUP BY CustomerId
+),
+ranked AS (
+    SELECT CustomerId, spend,
+           NTILE(4) OVER (ORDER BY spend DESC, CustomerId) AS quartile
+    FROM customer_spend
+)
+SELECT quartile,
+       COUNT(*)                                          AS customers,
+       ROUND(SUM(spend), 2)                              AS revenue,
+       ROUND(100.0 * SUM(spend) / (SELECT SUM(spend) FROM customer_spend), 1) AS pct_of_revenue
+FROM ranked
+GROUP BY quartile
+ORDER BY quartile;
+```
+
+| quartile | customers | revenue | pct_of_revenue |
+|---|---|---|---|
+| 1 | 15 | 654.3 | 28.1 |
+| 2 | 15 | 584.3 | 25.1 |
+| 3 | 15 | 564.3 | 24.2 |
+| 4 | 14 | 525.7 | 22.6 |
+
+## 12. What is cumulative revenue by month, and how does each month compare with the one before?
+
+Builds on the monthly buckets from question 5. SUM() OVER an ordered frame gives the running total; LAG() fetches the previous month in the same row so the change needs no self-join. The first month has no predecessor, so its change is NULL rather than a made-up zero. Gaps in the calendar are not filled, so LAG compares with the previous month that has invoices.
+
+```sql
+WITH monthly AS (
+    SELECT strftime('%Y-%m', InvoiceDate) AS month,
+           SUM(Total)                     AS revenue
+    FROM Invoice
+    GROUP BY strftime('%Y-%m', InvoiceDate)
+)
+SELECT month,
+       ROUND(revenue, 2)                                        AS revenue,
+       ROUND(SUM(revenue) OVER (ORDER BY month), 2)             AS cumulative_revenue,
+       ROUND(revenue - LAG(revenue) OVER (ORDER BY month), 2)   AS change_vs_previous
+FROM monthly
+ORDER BY month;
+```
+
+| month | revenue | cumulative_revenue | change_vs_previous |
+|---|---|---|---|
+| 2021-01 | 35.64 | 35.64 |  |
+| 2021-02 | 37.62 | 73.26 | 1.98 |
+| 2021-03 | 37.62 | 110.88 | 0.0 |
+| 2021-04 | 37.62 | 148.5 | 0.0 |
+| 2021-05 | 37.62 | 186.12 | 0.0 |
+| 2021-06 | 37.62 | 223.74 | 0.0 |
+| 2021-07 | 37.62 | 261.36 | 0.0 |
+| 2021-08 | 37.62 | 298.98 | 0.0 |
+| 2021-09 | 37.62 | 336.6 | 0.0 |
+| 2021-10 | 37.62 | 374.22 | 0.0 |
+| 2021-11 | 37.62 | 411.84 | 0.0 |
+| 2021-12 | 37.62 | 449.46 | 0.0 |
+
+_60 rows in total; first 12 shown. Full result in `results/`._
+
+## 13. Who are the top 2 artists in each of the five biggest genres?
+
+Top-N per group: ROW_NUMBER() restarts for every genre (PARTITION BY) and the outer query keeps rows 1 and 2. Ties are broken by artist name so the result is stable. Artists rather than tracks are ranked on purpose: no track in this database sold more than twice, so a per-track ranking would be a wall of ties. The five genres come from a second CTE.
+
+```sql
+WITH artist_genre_revenue AS (
+    SELECT g.GenreId, g.Name AS genre, ar.ArtistId, ar.Name AS artist,
+           SUM(il.UnitPrice * il.Quantity) AS revenue
+    FROM InvoiceLine AS il
+    JOIN Track  AS t  ON t.TrackId  = il.TrackId
+    JOIN Genre  AS g  ON g.GenreId  = t.GenreId
+    JOIN Album  AS al ON al.AlbumId = t.AlbumId
+    JOIN Artist AS ar ON ar.ArtistId = al.ArtistId
+    GROUP BY g.GenreId, g.Name, ar.ArtistId, ar.Name
+),
+top_genres AS (
+    SELECT GenreId
+    FROM artist_genre_revenue
+    GROUP BY GenreId
+    ORDER BY SUM(revenue) DESC, GenreId
+    LIMIT 5
+),
+numbered AS (
+    SELECT genre, artist, revenue,
+           ROW_NUMBER() OVER (PARTITION BY GenreId ORDER BY revenue DESC, artist) AS rn
+    FROM artist_genre_revenue
+    WHERE GenreId IN (SELECT GenreId FROM top_genres)
+)
+SELECT genre, rn AS rank_in_genre, artist, ROUND(revenue, 2) AS revenue
+FROM numbered
+WHERE rn <= 2
+ORDER BY genre, rn;
+```
+
+| genre | rank_in_genre | artist | revenue |
+|---|---|---|---|
+| Alternative & Punk | 1 | Titãs | 33.66 |
+| Alternative & Punk | 2 | Faith No More | 32.67 |
+| Latin | 1 | Os Paralamas Do Sucesso | 44.55 |
+| Latin | 2 | Chico Buarque | 26.73 |
+| Metal | 1 | Metallica | 90.09 |
+| Metal | 2 | Iron Maiden | 69.3 |
+| Rock | 1 | U2 | 90.09 |
+| Rock | 2 | Led Zeppelin | 86.13 |
+| TV Shows | 1 | Lost | 45.77 |
+| TV Shows | 2 | The Office | 31.84 |
+
+## 14. Who is the biggest-spending customer in each country with more than one customer?
+
+RANK() (not ROW_NUMBER) is used on purpose: if two customers tie for first in a country both are returned instead of one being dropped arbitrarily. COUNT() OVER a partition supplies the country's customer count without a second aggregation. Spend is rounded to cents before ranking because summed floating-point values can differ in the last bit between engines and silently break a tie (this was caught by the DuckDB portability test).
+
+```sql
+WITH customer_spend AS (
+    SELECT c.CustomerId,
+           c.FirstName || ' ' || c.LastName AS customer,
+           c.Country,
+           ROUND(SUM(i.Total), 2) AS spend
+    FROM Customer AS c
+    JOIN Invoice  AS i ON i.CustomerId = c.CustomerId
+    GROUP BY c.CustomerId, c.FirstName, c.LastName, c.Country
+),
+ranked AS (
+    SELECT Country, customer, spend,
+           RANK()  OVER (PARTITION BY Country ORDER BY spend DESC) AS spend_rank,
+           COUNT(*) OVER (PARTITION BY Country)                    AS customers_in_country
+    FROM customer_spend
+)
+SELECT Country, customer, spend, customers_in_country
+FROM ranked
+WHERE spend_rank = 1 AND customers_in_country > 1
+ORDER BY customers_in_country DESC, Country, customer;
+```
+
+| Country | customer | spend | customers_in_country |
+|---|---|---|---|
+| USA | Richard Cunningham | 47.62 | 13 |
+| Canada | François Tremblay | 39.62 | 8 |
+| Brazil | Luís Gonçalves | 39.62 | 5 |
+| France | Isabelle Mercier | 40.62 | 5 |
+| Germany | Fynn Zimmermann | 43.62 | 4 |
+| United Kingdom | Emma Jones | 37.62 | 3 |
+| United Kingdom | Phil Hughes | 37.62 | 3 |
+| United Kingdom | Steve Murray | 37.62 | 3 |
+| Czech Republic | Helena Holý | 49.62 | 2 |
+| India | Manoj Pareek | 38.62 | 2 |
+| Portugal | João Fernandes | 39.62 | 2 |
+
+## 15. How many genres does it take to reach 80% of revenue?
+
+A Pareto table. Genres are ordered by revenue and a running SUM() OVER divides by the grand total to give the cumulative share. The ROWS frame is explicit: the default RANGE frame would treat genres with equal revenue as one block and jump the running total. The answer is the first row at or above 80%.
+
+```sql
+WITH genre_revenue AS (
+    SELECT g.Name AS genre, SUM(il.UnitPrice * il.Quantity) AS revenue
+    FROM InvoiceLine AS il
+    JOIN Track AS t ON t.TrackId = il.TrackId
+    JOIN Genre AS g ON g.GenreId = t.GenreId
+    GROUP BY g.GenreId, g.Name
+)
+SELECT genre,
+       ROUND(revenue, 2) AS revenue,
+       ROUND(100.0 * SUM(revenue) OVER (ORDER BY revenue DESC, genre
+                                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+             / SUM(revenue) OVER (), 1) AS cumulative_pct
+FROM genre_revenue
+ORDER BY revenue DESC, genre;
+```
+
+| genre | revenue | cumulative_pct |
+|---|---|---|
+| Rock | 826.65 | 35.5 |
+| Latin | 382.14 | 51.9 |
+| Metal | 261.36 | 63.1 |
+| Alternative & Punk | 241.56 | 73.5 |
+| TV Shows | 93.53 | 77.5 |
+| Jazz | 79.2 | 80.9 |
+| Blues | 60.39 | 83.5 |
+| Drama | 57.71 | 86.0 |
+| Classical | 40.59 | 87.7 |
+| R&B/Soul | 40.59 | 89.5 |
+| Sci Fi & Fantasy | 39.8 | 91.2 |
+| Reggae | 29.7 | 92.5 |
+
+_24 rows in total; first 12 shown. Full result in `results/`._

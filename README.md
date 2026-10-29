@@ -40,7 +40,7 @@ Things worth knowing before writing queries:
 
 ## Business questions
 
-Ten questions answered with joins and aggregations, one `.sql` file each in [`queries/`](queries/),
+Fifteen questions, ten with joins and aggregations and five with CTEs and window functions, one `.sql` file each in [`queries/`](queries/),
 with results in [`results/`](results/) and a readable write-up in
 [`docs/business_questions.md`](docs/business_questions.md):
 
@@ -56,6 +56,11 @@ with results in [`results/`](results/) and a readable write-up in
 | 8 | How many customers placed 1, 2, 3... invoices? | Aggregate of an aggregate |
 | 9 | How big is each playlist? | Link-table join, unit conversion |
 | 10 | Who reports to whom? | Self-join |
+| 11 | How concentrated is revenue across customer spend quartiles? | CTE, NTILE |
+| 12 | What is cumulative revenue by month, and the change on the month before? | Running SUM() OVER, LAG |
+| 13 | Who are the top 2 artists in each of the five biggest genres? | Chained CTEs, ROW_NUMBER with PARTITION BY |
+| 14 | Who is the top spender in each country with several customers? | RANK (keeps ties), COUNT() OVER |
+| 15 | How many genres does it take to reach 80% of revenue? | Cumulative share, explicit ROWS frame |
 
 Some of what the results show (all from `results/`):
 
@@ -64,6 +69,10 @@ Some of what the results show (all from `results/`):
 - 1,519 of 3,503 tracks (43%) have never been bought.
 - Purchasing is almost uniform: 58 of 59 customers placed exactly 7 invoices and one placed 6. That points to generated sample data, so patterns like "repeat buyers" cannot be drawn from it.
 - Two playlists are both named "Music" (ids 1 and 8) with identical sizes, a duplicate worth cleaning in a real system.
+- Customer spend is only mildly concentrated: the top quartile of customers brings in 28.1% of revenue and the bottom quartile 22.6%. Again, sample data.
+- Revenue is almost flat month to month (about $37.62 for most of the 60 months), so the growth query shows steady totals, not a trend.
+- Revenue is concentrated by genre, though: six of 24 genres reach 80% of revenue, and Rock alone is 35.5%.
+- Three UK customers tie for top spender at $37.62; `RANK()` returns all three, where `ROW_NUMBER()` would have dropped two arbitrarily.
 
 ### How the results are checked
 
@@ -71,7 +80,7 @@ SQL that runs is not necessarily SQL that is right. `tests/test_queries.py` reco
 in plain Python (dictionaries and loops over the raw tables) and compares. It also reconciles
 totals: revenue from `Invoice.Total` equals revenue rebuilt from `InvoiceLine` ($2,328.60), and the
 join-heavy questions (genres, artists, reps, months) each sum back to that same total, which proves
-the joins lose no rows. Another test fails if the committed `results/` or `docs/` are out of date.
+the joins lose no rows. Queries 11-15 are tested in `tests/test_advanced_queries.py` the same way, with money compared in integer cents. Another test fails if the committed `results/` or `docs/` are out of date.
 
 ```bash
 PYTHONPATH=src python -m sqlproject report   # rerun all queries, rewrite results/ and docs/business_questions.md
