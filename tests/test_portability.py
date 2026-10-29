@@ -7,6 +7,8 @@ rejects. Money columns are therefore created as NUMERIC there, as a real migrati
 Both extra engines are optional locally (the tests skip) and installed in CI.
 """
 
+import importlib
+import os
 import sqlite3
 
 import pytest
@@ -14,7 +16,15 @@ import pytest
 from sqlproject import db
 from sqlproject.runner import load_queries
 
-duckdb = pytest.importorskip("duckdb")
+
+def optional_engine(name: str):
+    """Skip locally if an engine is missing, but fail in CI so a broken install cannot hide a skip."""
+    if os.environ.get("CI"):
+        return importlib.import_module(name)
+    return pytest.importorskip(name)
+
+
+duckdb = optional_engine("duckdb")
 
 
 def _duck_type(declared: str) -> str:
@@ -56,8 +66,8 @@ def test_query_returns_same_rows_on_duckdb(engines, query):
 
 @pytest.fixture(scope="module")
 def postgres(engines):
-    pgserver = pytest.importorskip("pixeltable_pgserver")
-    psycopg2 = pytest.importorskip("psycopg2")
+    pgserver = optional_engine("pixeltable_pgserver")
+    psycopg2 = optional_engine("psycopg2")
     import tempfile
 
     server = pgserver.get_server(tempfile.mkdtemp())
