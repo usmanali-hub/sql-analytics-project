@@ -77,6 +77,12 @@ the joins lose no rows. Another test fails if the committed `results/` or `docs/
 PYTHONPATH=src python -m sqlproject report   # rerun all queries, rewrite results/ and docs/business_questions.md
 ```
 
+## Portability
+
+The queries stick to standard SQL apart from `strftime` in query 5. `tests/test_portability.py` loads the same tables into DuckDB and requires every query to return the same rows as SQLite. That check found a real problem: four queries selected columns that were not in `GROUP BY`, which SQLite tolerates but stricter engines (PostgreSQL, DuckDB) reject. They now group by every selected column, with identical results.
+
+Not covered: query 5's month bucketing uses `strftime`, which DuckDB happens to share; PostgreSQL and MySQL would need `to_char` and `DATE_FORMAT`. Neither was run here.
+
 ## Code
 
 | Module | Purpose |

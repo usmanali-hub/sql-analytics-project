@@ -42,7 +42,7 @@ SELECT c.CustomerId,
        ROUND(SUM(i.Total), 2)           AS lifetime_spend
 FROM Customer AS c
 JOIN Invoice  AS i ON i.CustomerId = c.CustomerId
-GROUP BY c.CustomerId
+GROUP BY c.CustomerId, c.FirstName, c.LastName, c.Country
 ORDER BY lifetime_spend DESC, c.CustomerId
 LIMIT 10;
 ```
@@ -101,7 +101,7 @@ FROM InvoiceLine AS il
 JOIN Track  AS t  ON t.TrackId  = il.TrackId
 JOIN Album  AS al ON al.AlbumId = t.AlbumId
 JOIN Artist AS ar ON ar.ArtistId = al.ArtistId
-GROUP BY ar.ArtistId
+GROUP BY ar.ArtistId, ar.Name
 ORDER BY revenue DESC, artist
 LIMIT 10;
 ```
@@ -163,7 +163,7 @@ SELECT e.EmployeeId,
 FROM Employee AS e
 LEFT JOIN Customer AS c ON c.SupportRepId = e.EmployeeId
 LEFT JOIN Invoice  AS i ON i.CustomerId   = c.CustomerId
-GROUP BY e.EmployeeId
+GROUP BY e.EmployeeId, e.FirstName, e.LastName, e.Title
 ORDER BY revenue DESC, e.EmployeeId;
 ```
 
@@ -241,7 +241,7 @@ SELECT p.PlaylistId,
 FROM Playlist AS p
 LEFT JOIN PlaylistTrack AS pt ON pt.PlaylistId = p.PlaylistId
 LEFT JOIN Track         AS t  ON t.TrackId     = pt.TrackId
-GROUP BY p.PlaylistId
+GROUP BY p.PlaylistId, p.Name
 ORDER BY tracks DESC, p.PlaylistId;
 ```
 

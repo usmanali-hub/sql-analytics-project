@@ -7,5 +7,5 @@ SELECT p.PlaylistId,
 FROM Playlist AS p
 LEFT JOIN PlaylistTrack AS pt ON pt.PlaylistId = p.PlaylistId
 LEFT JOIN Track         AS t  ON t.TrackId     = pt.TrackId
-GROUP BY p.PlaylistId
+GROUP BY p.PlaylistId, p.Name
 ORDER BY tracks DESC, p.PlaylistId;

@@ -9,5 +9,5 @@ SELECT e.EmployeeId,
 FROM Employee AS e
 LEFT JOIN Customer AS c ON c.SupportRepId = e.EmployeeId
 LEFT JOIN Invoice  AS i ON i.CustomerId   = c.CustomerId
-GROUP BY e.EmployeeId
+GROUP BY e.EmployeeId, e.FirstName, e.LastName, e.Title
 ORDER BY revenue DESC, e.EmployeeId;

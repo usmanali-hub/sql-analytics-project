@@ -7,6 +7,6 @@ SELECT c.CustomerId,
        ROUND(SUM(i.Total), 2)           AS lifetime_spend
 FROM Customer AS c
 JOIN Invoice  AS i ON i.CustomerId = c.CustomerId
-GROUP BY c.CustomerId
+GROUP BY c.CustomerId, c.FirstName, c.LastName, c.Country
 ORDER BY lifetime_spend DESC, c.CustomerId
 LIMIT 10;
