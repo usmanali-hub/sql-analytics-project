@@ -1,0 +1,9 @@
+EmployeeId,employee,manager,direct_reports
+1,Andrew Adams,(none: top of the tree),2
+2,Nancy Edwards,Andrew Adams,3
+3,Jane Peacock,Nancy Edwards,0
+4,Margaret Park,Nancy Edwards,0
+5,Steve Johnson,Nancy Edwards,0
+6,Michael Mitchell,Andrew Adams,2
+7,Robert King,Michael Mitchell,0
+8,Laura Callahan,Michael Mitchell,0

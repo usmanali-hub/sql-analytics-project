@@ -1,0 +1,9 @@
+EmployeeId,employee,Title,customers,invoices,revenue
+3,Jane Peacock,Sales Support Agent,21,146,833.04
+4,Margaret Park,Sales Support Agent,20,140,775.4
+5,Steve Johnson,Sales Support Agent,18,126,720.16
+1,Andrew Adams,General Manager,0,0,0.0
+2,Nancy Edwards,Sales Manager,0,0,0.0
+6,Michael Mitchell,IT Manager,0,0,0.0
+7,Robert King,IT Staff,0,0,0.0
+8,Laura Callahan,IT Staff,0,0,0.0
