@@ -3,18 +3,23 @@
 ![CI](https://github.com/usmanali-hub/sql-analytics-project/actions/workflows/ci.yml/badge.svg)
 
 SQL analytics on the [Chinook](https://github.com/lerocha/chinook-database) sample database, a
-digital music store with 11 tables, 59 customers, 412 invoices and about 3,500 tracks. The repo
-starts with the groundwork that every analysis depends on: loading the data safely, understanding
-its schema, and profiling its quality. Business questions in plain SQL build on top of it.
+digital music store with 11 tables, 59 customers, 412 invoices and about 3,500 tracks. It covers
+the whole path: loading the data read-only, documenting the schema and data quality, answering 15
+business questions from joins through window functions, and proving the answers right with tests
+that recompute them independently and run the same SQL on three database engines.
 
 ## Setup
 
 ```bash
-pip install pytest          # only for the tests; the tooling uses the standard library
+pip install pytest          # the tooling itself uses only the standard library
 PYTHONPATH=src python -m sqlproject check    # integrity check: file is sound, every foreign key resolves
 PYTHONPATH=src python -m sqlproject docs     # regenerate docs/schema.md and docs/data_profile.md
+PYTHONPATH=src python -m sqlproject report   # rerun all queries, rewrite results/ and docs/business_questions.md
 PYTHONPATH=src pytest
 ```
+
+The cross-engine tests need DuckDB and PostgreSQL, so `pip install -e ".[dev]"` installs everything
+(without them those tests skip locally; in CI they are required).
 
 The database ships in `data/Chinook.sqlite` (MIT licensed, see [`data/NOTICE.md`](data/NOTICE.md)).
 
@@ -56,6 +61,38 @@ Limits of the data: it is generated sample data. 58 of 59 customers placed exact
 revenue is almost flat (about $37.62 for most of the 60 months), and customer spend is only mildly
 concentrated (top quartile 28.1% of revenue, bottom quartile 22.6%). Questions about repeat buyers,
 seasonality or customer segments therefore show the technique, not a business insight.
+
+### One query in full
+
+Question 15, how many genres does it take to reach 80% of revenue (a running share with an explicit window frame):
+
+```sql
+WITH genre_revenue AS (
+    SELECT g.Name AS genre, SUM(il.UnitPrice * il.Quantity) AS revenue
+    FROM InvoiceLine AS il
+    JOIN Track AS t ON t.TrackId = il.TrackId
+    JOIN Genre AS g ON g.GenreId = t.GenreId
+    GROUP BY g.GenreId, g.Name
+)
+SELECT genre,
+       ROUND(revenue, 2) AS revenue,
+       ROUND(100.0 * SUM(revenue) OVER (ORDER BY revenue DESC, genre
+                                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+             / SUM(revenue) OVER (), 1) AS cumulative_pct
+FROM genre_revenue
+ORDER BY revenue DESC, genre;
+```
+
+| genre | revenue | cumulative_pct |
+|---|---|---|
+| Rock | 826.65 | 35.5 |
+| Latin | 382.14 | 51.9 |
+| Metal | 261.36 | 63.1 |
+| Alternative & Punk | 241.56 | 73.5 |
+| TV Shows | 93.53 | 77.5 |
+| Jazz | 79.2 | 80.9 |
+
+(first six of 24 rows; full output in [`results/15_genre_pareto.csv`](results/15_genre_pareto.csv))
 
 ### The queries
 
@@ -115,6 +152,6 @@ Design notes:
 - **Table names are validated against the database** before being placed in SQL, because identifiers cannot be bound as parameters.
 - **Generated docs are tested.** One test fails if `docs/` is out of date with the database.
 
-## Next
+## Related
 
-CTEs and window functions for ranking and running totals, a query-plan comparison with and without an index, and parameterized queries from Python.
+Smaller SQL experiments live in [ai-engineering-notes](https://github.com/usmanali-hub/ai-engineering-notes): window functions, index vs no index with `EXPLAIN QUERY PLAN`, recursive CTEs and parameterized queries from Python.
